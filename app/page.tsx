@@ -1,64 +1,233 @@
+"use client";
+
 import Image from "next/image";
+
+const TILE_SIZE = 32;
+
+const TILE_MAP: Record<
+  string,
+  { src: string; alt: string; bg?: string } | null
+> = {
+  W: { src: "/cabana.png", alt: "Cabana" },
+  p: { src: "/pool.png", alt: "Pool", bg: "/textureWater.png" },
+  c: { src: "/houseChimney.png", alt: "Chalet" },
+  ".": null,
+};
+
+function getPathTile(
+  rows: string[],
+  x: number,
+  y: number,
+): { src: string; rotation: number } {
+  const charAt = (px: number, py: number) => {
+    if (py < 0 || py >= rows.length || px < 0 || px >= rows[py].length)
+      return ".";
+    return rows[py][px];
+  };
+
+  const isBuilding = (ch: string) => ch === "c" || ch === "W";
+
+  // Each building gets ONE entry only:
+  //   1. Prefer bottom entry (path below the building)
+  //   2. Fall back to top entry if no path below
+  //   3. Horizontal only if no vertical path exists at all
+
+  // Checking UP: building at (x, y-1) — we are its bottom entry (preferred) → always connect
+  // Checking DOWN: building at (x, y+1) — we are its top entry → only if no path below it
+  const connectsUp = () => {
+    const ch = charAt(x, y - 1);
+    if (ch === "#") return true;
+    if (isBuilding(ch)) return true; // we're the building's bottom entry (preferred)
+    return false;
+  };
+
+  const connectsDown = () => {
+    const ch = charAt(x, y + 1);
+    if (ch === "#") return true;
+    if (!isBuilding(ch)) return false;
+    // We'd be the building's top entry — only if it has no path below (no bottom entry)
+    return charAt(x, y + 2) !== "#";
+  };
+
+  const connectsSide = (px: number, py: number) => {
+    const ch = charAt(px, py);
+    if (ch === "#") return true;
+    if (!isBuilding(ch)) return false;
+    // Horizontal only if building has no vertical path at all
+    const hasAbovePath = charAt(px, py - 1) === "#";
+    const hasBelowPath = charAt(px, py + 1) === "#";
+    return !hasAbovePath && !hasBelowPath;
+  };
+
+  const up = connectsUp();
+  const down = connectsDown();
+  const left = connectsSide(x - 1, y);
+  const right = connectsSide(x + 1, y);
+
+  const count = [up, down, left, right].filter(Boolean).length;
+
+  if (count === 4) {
+    return { src: "/arrowCrossing.png", rotation: 0 };
+  }
+
+  if (count === 3) {
+    // T-junction: base image connects UP, DOWN, RIGHT (wall on LEFT)
+    if (!left) return { src: "/arrowSplit.png", rotation: 0 };
+    if (!up) return { src: "/arrowSplit.png", rotation: 90 };
+    if (!right) return { src: "/arrowSplit.png", rotation: 180 };
+    if (!down) return { src: "/arrowSplit.png", rotation: 270 };
+  }
+
+  if (count === 2) {
+    // Straight paths
+    if (up && down) return { src: "/arrowStraight.png", rotation: 0 };
+    if (left && right) return { src: "/arrowStraight.png", rotation: 90 };
+
+    // Corners: base image connects UP and LEFT
+    if (up && left) return { src: "/arrowCornerSquare.png", rotation: 270 };
+    if (up && right) return { src: "/arrowCornerSquare.png", rotation: 0 };
+    if (down && right) return { src: "/arrowCornerSquare.png", rotation: 90 };
+    if (down && left) return { src: "/arrowCornerSquare.png", rotation: 180 };
+  }
+
+  if (count === 1) {
+    // Dead end: base image has opening at BOTTOM
+    if (down) return { src: "/arrowEnd.png", rotation: 0 };
+    if (left) return { src: "/arrowEnd.png", rotation: 90 };
+    if (up) return { src: "/arrowEnd.png", rotation: 180 };
+    if (right) return { src: "/arrowEnd.png", rotation: 270 };
+  }
+
+  // Isolated path tile — fallback to crossing
+  return { src: "/arrowCrossing.png", rotation: 0 };
+}
+
+function assignRoomNumbers(rows: string[]): Map<string, number> {
+  const roomMap = new Map<string, number>();
+  let floor = 1;
+  let offset = 0;
+
+  for (let y = 0; y < rows.length; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      if (rows[y][x] === "W") {
+        roomMap.set(`${x},${y}`, floor * 100 + offset);
+        offset++;
+        if (offset > 20) {
+          floor++;
+          offset = 0;
+        }
+      }
+    }
+  }
+
+  return roomMap;
+}
+
+function ResortMap({ asciiMap }: { asciiMap: string }) {
+  const rows = asciiMap.split("\n").filter((line) => line.length > 0);
+  const roomNumbers = assignRoomNumbers(rows);
+
+  return (
+    <div
+      className="inline-flex flex-col"
+      style={{
+        backgroundImage: "url(/parchmentBasic.png)",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      {rows.map((row, y) => (
+        <div key={y} className="flex">
+          {[...row].map((char, x) => {
+            const tile = TILE_MAP[char];
+            const isPath = char === "#";
+            const pathTile = isPath ? getPathTile(rows, x, y) : null;
+            const isCabana = char === "W";
+            const roomNumber = isCabana
+              ? roomNumbers.get(`${x},${y}`)
+              : undefined;
+
+            return (
+              <div
+                key={x}
+                style={{
+                  width: TILE_SIZE,
+                  height: TILE_SIZE,
+                  position: "relative",
+                  ...(tile?.bg && {
+                    backgroundImage: `url(${tile.bg})`,
+                    backgroundSize: "cover",
+                  }),
+                  ...(isCabana && { cursor: "pointer" }),
+                }}
+                className="shrink-0"
+                onClick={
+                  isCabana
+                    ? () => console.log(`Room ${roomNumber}`)
+                    : undefined
+                }
+                title={isCabana ? `Room ${roomNumber}` : undefined}
+              >
+                {isPath && pathTile ? (
+                  <Image
+                    src={pathTile.src}
+                    alt="Path"
+                    width={TILE_SIZE}
+                    height={TILE_SIZE}
+                    style={{
+                      position: "relative",
+                      zIndex: 1,
+                      transform: pathTile.rotation
+                        ? `rotate(${pathTile.rotation}deg)`
+                        : undefined,
+                    }}
+                  />
+                ) : tile ? (
+                  <Image
+                    src={tile.src}
+                    alt={tile.alt}
+                    width={TILE_SIZE}
+                    height={TILE_SIZE}
+                    style={{ position: "relative", zIndex: 1 }}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const ASCII_MAP = `....................
+.c....c....c......c.
+.##################.
+...#....c..#.c.c..#.
+...#.c....c#.....c#.
+.##################.
+.#.c...c...#....#c..
+.#c....#####c...###.
+.#...c.#......c.c.#.
+.##################.
+.#..................
+.#.WWWWWWWWWWWWWW...
+.#.WWWppppppppWWW...
+.#.WWWppppppppWWW...
+.#.WWWppppppppWWW...
+.#.WWWWWWWWWWWWWWW..
+.################...
+....................
+....................`;
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black min-h-screen">
+      <main className="flex flex-1 flex-col items-center justify-center p-8">
+        <h1 className="text-2xl font-semibold mb-6 text-black dark:text-zinc-50">
+          Resort Map
+        </h1>
+        <ResortMap asciiMap={ASCII_MAP} />
       </main>
     </div>
   );
