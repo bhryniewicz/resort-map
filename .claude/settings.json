@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm build:*)",
+      "Bash(node -e \"console.log\\(process.argv\\)\" -- --map data/newmap.ascii)",
+      "Bash(node -e \"console.log\\(require\\(''/Users/bartoszhryniewicz/Documents/resort-map/node_modules/next/package.json''\\).version\\)\")",
+      "mcp__claude_ai_Context7__resolve-library-id",
+      "Bash(chmod +x /Users/bartoszhryniewicz/Documents/resort-map/scripts/run.sh)",
+      "mcp__claude_ai_Context7__query-docs"
+    ]
+  }
+}
