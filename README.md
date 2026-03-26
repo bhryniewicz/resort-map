@@ -84,6 +84,7 @@ Files are validated both at startup (via `scripts/validate-user-files.ts` before
 - **Notifications:** Sonner (toast)
 - **Testing:** Vitest 4, Testing Library (React + user-event), jsdom
 - **Package Manager:** pnpm
+- **AI Tooling:** Claude Code (Opus 4.6), Gemini, Next.js MCP server (Context7)
 
 ## Backend
 
